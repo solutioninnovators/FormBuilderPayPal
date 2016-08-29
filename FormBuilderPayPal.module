@@ -1,0 +1,318 @@
+<?php
+class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
+{
+
+	public static function getModuleInfo()
+	{
+		return array(
+			'title' => 'Form Builder PayPal Integration',
+			'author' => 'Mike Spooner (thetuningspoon), Solution Innovators',
+			'version' => 001,
+			'summary' => '',
+			'singular' => true,
+			'autoload' => true,
+			'installs' => array(),
+			'requires' => array('FormBuilder'),
+		);
+	}
+	
+	// Default configuration options (will be overwritten by user config)
+	static public function getDefaultData() {
+		return array(
+			'test_mode' => 0,
+			'account' => '',
+			'test_account' => '',
+			'redirect_page' => '',
+			'ipn_page' => '',
+			'no_shipping' => 0,
+			'no_note' => 0,
+			'currency_code' => 'USD',
+			'locale' => 'US',
+		);
+	}
+
+	public function __construct() {
+		// Set defaults (which may be overwritten by user settings)
+		foreach(self::getDefaultData() as $key => $value) {
+			$this->$key = $value;
+		}
+	}
+
+	public function init() {
+		$this->addHookAfter('FormBuilderProcessor::formSubmitSuccess', $this, 'paymentRedirect');
+		$this->addHookBefore('FormBuilderProcessor::saveForm', $this, 'turnOffEmails');
+		$this->addHookAfter('ProcessFormBuilder::buildEditFormFields', $this, 'addDocumentation');
+	}
+	
+	public function paymentRedirect(HookEvent $event) {
+		$inputfields = $event->arguments(0);
+		$that = $event->object;
+		
+		if($inputfields->get('total')) {
+			$data = array();
+			// Pull the sanitized data from the fields we want to send to PayPal
+			$data['cmd'] = '_xclick';
+			$data['business'] = $this->test_mode ? $this->test_account : $this->account;
+			$data['amount'] = $inputfields->get('total')->value;
+			$data['item_name'] = $inputfields->get('item_name')->value; /*str_replace('-',' ',$event->object->formName)*/
+			if(!empty($this->no_shipping)) $data['no_shipping'] = $this->no_shipping;
+			if(!empty($this->no_note)) $data['no_note'] = $this->no_note;
+			$data['currency_code'] = $this->currency_code;
+			$data['lc'] = $this->locale;
+			if(!empty($this->redirect_page)) $data['return'] = $this->pages->get($this->redirect_page)->httpUrl;
+			$data['rm'] = '2'; // Return method (POST)
+			if(!empty($this->ipn_page)) $data['notify_url'] = $this->pages->get($this->ipn_page)->httpUrl;
+			
+			// Prepopulate PayPal fields
+			$data['first_name'] = $inputfields->get('first_name') ? $inputfields->get('first_name')->value : '';
+			$data['last_name'] = $inputfields->get('last_name') ? $inputfields->get('last_name')->value : '';
+			$data['address1'] = $inputfields->get('mailing_address') ? $inputfields->get('mailing_address')->value : '';
+			$data['city'] = $inputfields->get('city') ? $inputfields->get('city')->value : '';
+			$data['state'] = $inputfields->get('state') ? $inputfields->get('state')->value : '';
+			$data['zip'] = $inputfields->get('zip') ? $inputfields->get('zip')->value : '';
+			$data['email'] = $inputfields->get('email') ? $inputfields->get('email')->value : '';
+			$data['night_phone_b'] = $inputfields->get('phone_number') ? $inputfields->get('phone_number')->value : '';
+			
+			$data['custom'] = $event->object->formName . ',' . $event->object->getEntryID();
+			
+			// We have to handle things a bit differently if this is a recurring payment:
+
+			if($inputfields->get('recurring') && $inputfields->get('recurring')->value) { // This is a recurring payment
+				unset($data['amount']); // Recurring payments doesn't use the amount variable
+
+				$data['cmd'] = '_xclick-subscriptions';
+				$data['item_name'] = 'Recurring Donation';
+				$data['a3'] = $inputfields->get('total')->value;
+				$data['src'] = 1; // Set recurring payments until canceled
+
+				switch($inputfields->get('frequency')->value) {
+					case 'Monthly':
+						$data['t3'] = 'M'; // Month
+						$data['p3'] = '1'; // Every month
+					break;
+					case 'Quarterly':
+						$data['t3'] = 'M'; // Month
+						$data['p3'] = '3'; // Every 3 months
+					break;
+					case 'Annually':
+						$data['t3'] = 'Y'; // Year
+						$data['p3'] = '1'; // Every 1 year
+					break;
+				}
+			}
+
+			$query = http_build_query($data);
+			
+			$url = 'https://www.paypal.com/cgi-bin/webscr/';
+			if($this->test_mode) $url = 'https://www.sandbox.paypal.com/cgi-bin/webscr/';
+
+			// If this is an embedded form, we'll need to use javascript to perform the redirect
+			if($that->page->template == 'form-builder') {
+				echo "<script>";
+				echo "top.window.location.href = '$url?$query';";
+				echo "</script>";
+			}
+			else {
+				$that->session->redirect("$url?$query");
+			}
+		}
+	}
+
+	/**
+	 * Updates the entries database to confirm payment was successful and sends confirmation emails. This can be called manually from the template of your payment confirmation page or PayPal IPN page using $modules->FormBuilderPayPal->processCompletedPayment()
+	 *
+	 * @param WireArray $rawResponse - The response from the payment processor (the $input->get or $input->post WireArray)
+	 * @return Array $fieldArray - Returns the updated form entry if the response was valid and payment was successful, or false if not
+	 *
+	 * $formName, $entryId, $transId, $orderId, $paymentStatus
+	 */
+	public function processCompletedPayment(WireArray $rawResponse = null) {
+		if(empty($rawResponse)) $rawResponse = $this->input->post;
+
+		// Assign raw response values to local variables
+		$payment_status = $this->sanitizer->text($rawResponse->payment_status);
+		$payment_amount = $this->sanitizer->float($rawResponse->mc_gross);
+		$transaction_id = $this->sanitizer->text($rawResponse->txn_id);
+
+		// Get the form name and entry ID from the custom variable returned from PayPal
+		if(!$rawResponse->custom) $this->log->save('error', 'No custom value was returned from PayPal.');
+		$customArray = explode(',', $rawResponse->custom);
+		if(count($customArray) != 2) $this->log->save('error', 'Custom value from PayPal must contain 2 values.');
+		$formName = $customArray[0];
+		$entryId = (int) $customArray[1];
+
+		// Grab the array of fields from the form entry with the ID we passed through PayPal's custom variable
+		$fieldArray = $this->forms->get($formName)->entries->get($entryId);
+
+		if($payment_status == 'Completed' && $fieldArray['payment_status'] != 'PAID') { // payment_status is set to complete for the first time
+
+			// Update the paid_online field based on the amount that was passed from PayPal
+			$fieldArray['paid_online'] = $payment_amount;
+			// Update the transaction_id field based on the transaction ID received from PayPal
+			$fieldArray['transaction_id'] = $transaction_id;
+			// Update payment status
+			$fieldArray['payment_status'] = 'PAID';
+
+			// Save the array back to the database
+			$this->forms->get($formName)->entries->save($fieldArray);
+
+			// Send Emails - We turned off emails in turnOffEmails() so we could delay sending them until the payment has been completed
+			$this->sendEmails($formName, $entryId);
+		}
+
+		return $fieldArray;
+	}
+
+	
+	/**
+	 * Prevents emails from sending if this is a payment form, so that we can manually trigger the emails after payment is confirmed
+	 */
+	public function turnOffEmails(HookEvent $event) {
+		$form = $event->arguments[0];
+		$that = $event->object;
+
+		if($form->get('total')) {
+			$that->saveFlags &= ~FormBuilderProcessor::saveFlagEmail; // Turn off the bitwise admin email flag
+			$that->saveFlags &= ~FormBuilderProcessor::saveFlagResponder; // Turn off the bitwise user email flag
+		}
+	}
+
+	/**
+	 * Send the admin and user emails for a given form entry
+	 */
+	public function sendEmails($formName, $entryId) {
+		$form = $this->forms->get($formName);
+		$processor = $form->processor();
+		$entries = $form->entries();
+		$entry = $entries->get($entryId);
+		$processor->populate($entry, $entryId);
+		$inputfields = $processor->getInputfieldsForm();
+
+		if($processor->saveFlags & FormBuilderProcessor::saveFlagEmail) $processor->emailForm($inputfields, array()); // Send to admin (if enabled)
+		if($processor->saveFlags & FormBuilderProcessor::saveFlagResponder) $processor->emailFormResponder($inputfields, array()); // Send to user (if enabled)
+	}
+	
+	/**
+	 * Adds documentation for pricing fields to FormBuilder
+	 */
+	public function addDocumentation(HookEvent $event) {
+		$fieldset = $event->return;
+	
+		$text = __("
+		<ul style='font-size: .8em;'>
+			<li><strong>total</strong> (type: Text or Hidden) - This field is required to enable pricing on any form. It will show the calculated total to the user and record it in the database. Set this to Hidden and create a *_amount field (see below) if you want the user to be able to adjust the price.</li>
+			<li><strong>*_amount</strong> (type: Text) - Any field with \"_amount\" appended to the field name will have its value added to the total.</li>
+			<li><strong>base_price</strong> (type: Hidden) - The base price for the form if no options are included</li>
+
+			<li><strong>number_of_adults</strong> (type: Integer) - Field to record the number of adults the user wants to register (use in conjunction with adult_price)</li>
+			<li><strong>number_of_youth</strong> (type: Integer) - Field to record the number of youth the user wants to register (use in conjunction with youth_price)</li>
+			<li><strong>number_of_children</strong> (type: Integer) - Field to record the number of children the user wants to register (use in conjunction with children_price)</li>
+			<li><strong>adult_price</strong> (type: Hidden) - Price per adult being registered (use in conjunction with number_of_adults)</li>
+			<li><strong>youth_price</strong> (type: Hidden) - Price per youth being registered (use in conjunction with number_of_youth)</li>
+			<li><strong>child_price</strong> (type: Hidden) - Price per child being registered (use in conjunction with number_of_children)</li>
+			<li><strong>max_price</strong> (type: Hidden) - Use this to limit the total cost to a maximum, regardless of what options/attendees are selected</li>
+			<li><strong>min_price</strong> (type: Hidden) - Use this to make sure the price does not drop below a certain threshold, regardless of what options are selected</li>
+			<li><strong>amount_paid</strong> (type: Hidden) - The amount paid online, confirmed by the payment processor</li>
+			<li><strong>item_name</strong> (type: Hidden) - The item name to pass to the payment provider, to describe the product/service being sold</li>
+			<li><strong>transaction_id</strong> (type: Hidden) - An empty field to record the unique transaction id returned from the payment provider</li>
+			<li><strong>payment_status</strong> (type: Hidden) - An empty field to record the status (i.e. \"Completed\") returned from the payment provider</li>
+		</ul>
+	
+		<p><em>Fields that will be passed to pre-populate the off-site payment form: first_name, last_name, mailing_address, city, state, zip, email, phone_number</em></p>
+		");
+	
+	
+		$instructions = new InputfieldMarkup();
+		$instructions->icon = 'info-circle';
+		$instructions->label = __('Payment Integration Instructions');
+		$instructions->description = __('The following fields may be added to the form to enable and manage pricing. All fields except "total" are optional.');
+		$instructions->notes = __("To give options a price, create a radio button or select field and set the value of the option to the price you wish to add to the total (leave out currency symbols)");
+		$instructions->set('markupText', $text);
+	
+		$fieldset->append($instructions);
+	
+		$event->return = $fieldset;
+	}
+	
+	
+	public static function getModuleConfigInputfields(array $data) {
+		$data = array_merge(self::getDefaultData(), $data); // Merge the defaults with the custom data, preferring custom
+	
+		$inputfields = new InputfieldWrapper();
+	
+		$field = wire('modules')->get('InputfieldCheckbox');
+		$field->label = __("Test Mode");
+		$field->name = "test_mode";
+		$field->value = 1;
+		if($data['test_mode']) $field->attr('checked', 'checked');
+		$inputfields->add($field);
+	
+		$field = wire('modules')->get('InputfieldText');
+		$field->label = __("Account Email");
+		$field->name = "account";
+		$field->value = $data['account'];
+		$inputfields->add($field);
+		
+		$field = wire('modules')->get('InputfieldText');
+		$field->label = __("Test Account Email");
+		$field->name = "test_account";
+		$field->value = $data['test_account'];
+		$inputfields->add($field);
+	
+		$field = wire('modules')->get('InputfieldPageListSelect');
+		$field->label = __("Redirect/Payment Confirmation Page");
+		$field->name = "redirect_page";
+		$field->notes = __("Return/redirect must also be enabled in the PayPal interface for your account.");
+		$field->value = $data['redirect_page'];
+		$inputfields->add($field);
+		
+		$field = wire('modules')->get('InputfieldPageListSelect');
+		$field->label = __("IPN Page");
+		$field->description = __("The IPN is a more reliable way to confirm that a payment has completed.");
+		$field->notes = __("To use the IPN, the IPN functionality must first be enabled in the PayPal interface for your account.");
+		$field->name = "ipn_page";
+		$field->value = $data['ipn_page'];
+		$inputfields->add($field);
+		
+		// PayPal Payment Form Settings
+		$fieldset = wire('modules')->get('InputfieldFieldset');
+		$fieldset->label = __("PayPal Payment Form Settings");
+		$fieldset->name = "paypal_form";
+		
+			$field = wire('modules')->get('InputfieldCheckbox');
+			$field->label = __("Do not prompt buyers for a shipping address");
+			$field->name = "no_shipping";
+			$field->value = 1;
+			if($data['no_shipping']) $field->attr('checked', 'checked');
+			$fieldset->add($field);
+			
+			$field = wire('modules')->get('InputfieldCheckbox');
+			$field->label = __("Do not prompt buyers to include a note with their payments");
+			$field->name = "no_note";
+			$field->value = 1;
+			if($data['no_note']) $field->attr('checked', 'checked');
+			$fieldset->add($field);
+			
+			$field = wire('modules')->get('InputfieldText');
+			$field->label = __("Currency Code");
+			$field->name = "currency_code";
+			$field->value = $data['currency_code'];
+			$fieldset->add($field);
+			
+			$field = wire('modules')->get('InputfieldText');
+			$field->label = __("Locale Code");
+			$field->name = "locale";
+			$field->value = $data['locale'];
+			$fieldset->add($field);
+			
+		$inputfields->add($fieldset);
+	
+		return $inputfields;
+	}
+	
+
+	public function install() {}
+
+	public function uninstall() {}
+
+}
