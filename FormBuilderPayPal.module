@@ -7,7 +7,7 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 		return array(
 			'title' => 'Form Builder PayPal Integration',
 			'author' => 'Mike Spooner (thetuningspoon), Solution Innovators',
-			'version' => 001,
+			'version' => 002,
 			'summary' => '',
 			'singular' => true,
 			'autoload' => true,
@@ -38,12 +38,20 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 		}
 	}
 
-	public function init() {
+	public function init()
+	{
 		$this->addHookAfter('FormBuilderProcessor::formSubmitSuccess', $this, 'paymentRedirect');
 		$this->addHookBefore('FormBuilderProcessor::saveForm', $this, 'turnOffEmails');
 		$this->addHookAfter('ProcessFormBuilder::buildEditFormFields', $this, 'addDocumentation');
+		$this->addHookAfter('FormBuilderRender::getScripts', $this, 'addScripts');
 	}
-	
+
+	public function addScripts(HookEvent $event) {
+		$scripts = $event->return; // Get the scripts array
+		$scripts[] = $this->config->urls->siteModules . basename(__DIR__) . "/FormBuilderPayPal.js"; // Add our script
+		$event->return = $scripts; // Set the modified return value
+	}
+
 	public function paymentRedirect(HookEvent $event) {
 		$inputfields = $event->arguments(0);
 		$that = $event->object;
@@ -121,7 +129,7 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 	/**
 	 * Updates the entries database to confirm payment was successful and sends confirmation emails. This can be called manually from the template of your payment confirmation page or PayPal IPN page using $modules->FormBuilderPayPal->processCompletedPayment()
 	 *
-	 * @param WireInputData $rawResponse - The response from the payment processor ($input->get or $input->post)
+	 * @param WireArray $rawResponse - The response from the payment processor (the $input->get or $input->post WireArray)
 	 * @return Array $fieldArray - Returns the updated form entry if the response was valid and payment was successful, or false if not
 	 *
 	 * $formName, $entryId, $transId, $orderId, $paymentStatus
