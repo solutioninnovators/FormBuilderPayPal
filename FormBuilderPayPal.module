@@ -121,12 +121,12 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 	/**
 	 * Updates the entries database to confirm payment was successful and sends confirmation emails. This can be called manually from the template of your payment confirmation page or PayPal IPN page using $modules->FormBuilderPayPal->processCompletedPayment()
 	 *
-	 * @param WireArray $rawResponse - The response from the payment processor (the $input->get or $input->post WireArray)
+	 * @param WireInputData $rawResponse - The response from the payment processor ($input->get or $input->post)
 	 * @return Array $fieldArray - Returns the updated form entry if the response was valid and payment was successful, or false if not
 	 *
 	 * $formName, $entryId, $transId, $orderId, $paymentStatus
 	 */
-	public function processCompletedPayment(WireArray $rawResponse = null) {
+	public function processCompletedPayment(WireInputData $rawResponse = null) {
 		if(empty($rawResponse)) $rawResponse = $this->input->post;
 
 		// Assign raw response values to local variables
