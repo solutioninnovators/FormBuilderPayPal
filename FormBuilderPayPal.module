@@ -206,28 +206,35 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 	public function addDocumentation(HookEvent $event) {
 		$fieldset = $event->return;
 	
-		$text = __("
-		<ul style='font-size: .8em;'>
-			<li><strong>total</strong> (type: Text or Hidden) - This field is required to enable pricing on any form. It will show the calculated total to the user and record it in the database. Set this to Hidden and create a *_amount field (see below) if you want the user to be able to adjust the price.</li>
-			<li><strong>*_amount</strong> (type: Text) - Any field with \"_amount\" appended to the field name will have its value added to the total.</li>
-			<li><strong>base_price</strong> (type: Hidden) - The base price for the form if no options are included</li>
-
-			<li><strong>number_of_adults</strong> (type: Integer) - Field to record the number of adults the user wants to register (use in conjunction with adult_price)</li>
-			<li><strong>number_of_youth</strong> (type: Integer) - Field to record the number of youth the user wants to register (use in conjunction with youth_price)</li>
-			<li><strong>number_of_children</strong> (type: Integer) - Field to record the number of children the user wants to register (use in conjunction with children_price)</li>
-			<li><strong>adult_price</strong> (type: Hidden) - Price per adult being registered (use in conjunction with number_of_adults)</li>
-			<li><strong>youth_price</strong> (type: Hidden) - Price per youth being registered (use in conjunction with number_of_youth)</li>
-			<li><strong>child_price</strong> (type: Hidden) - Price per child being registered (use in conjunction with number_of_children)</li>
-			<li><strong>max_price</strong> (type: Hidden) - Use this to limit the total cost to a maximum, regardless of what options/attendees are selected</li>
-			<li><strong>min_price</strong> (type: Hidden) - Use this to make sure the price does not drop below a certain threshold, regardless of what options are selected</li>
-			<li><strong>amount_paid</strong> (type: Hidden) - The amount paid online, confirmed by the payment processor</li>
-			<li><strong>item_name</strong> (type: Hidden) - The item name to pass to the payment provider, to describe the product/service being sold</li>
-			<li><strong>transaction_id</strong> (type: Hidden) - An empty field to record the unique transaction id returned from the payment provider</li>
-			<li><strong>payment_status</strong> (type: Hidden) - An empty field to record the status (i.e. \"Completed\") returned from the payment provider</li>
-		</ul>
-	
-		<p><em>Fields that will be passed to pre-populate the off-site payment form: first_name, last_name, mailing_address, city, state, zip, email, phone_number</em></p>
-		");
+		$text = "
+				<ul style='font-size: .8em;'>
+					<li><strong>total</strong> (type: Text or Hidden) - This field is required to enable pricing on any form. It will show the calculated total to the user and record it in the database. Set this to Hidden and create a *_amount field (see below) if you want the user to be able to adjust the price.</li>
+					<li><strong>*_amount</strong> (type: Text) - Any field with \"_amount\" appended to the field name will have its value added to the total.</li>
+					<li><strong>base_price</strong> (type: Hidden) - The base price for the form if no options are included</li>
+					<li><strong>member_base_price</strong> (type: Hidden) - An alternate base price for members (all member fields are optional)</li>
+					<li><strong>member</strong> (type: Checkbox) - Add a member checkbox to let the user specify that they are a member. This allows you to provide alternate discounted rates to those who check the box.</li>
+		
+					<li><strong>number_of_adults</strong> (type: Integer) - Field to record the number of adults the user wants to register (use in conjunction with adult_price)</li>
+					<li><strong>number_of_youth</strong> (type: Integer) - Field to record the number of youth the user wants to register (use in conjunction with youth_price)</li>
+					<li><strong>number_of_children</strong> (type: Integer) - Field to record the number of children the user wants to register (use in conjunction with children_price)</li>
+					<li><strong>adult_price</strong> (type: Hidden) - Price per adult being registered (use in conjunction with number_of_adults)</li>
+					<li><strong>member_adult_price</strong> (type: Hidden) - Price per adult for members</li>
+					<li><strong>youth_price</strong> (type: Hidden) - Price per youth being registered (use in conjunction with number_of_youth)</li>
+					<li><strong>member_youth_price</strong> (type: Hidden) - Price per youth for members</li>
+					<li><strong>child_price</strong> (type: Hidden) - Price per child being registered (use in conjunction with number_of_children)</li>
+					<li><strong>member_child_price</strong> (type: Hidden) - Price per child for members</li>
+					<li><strong>max_price</strong> (type: Hidden) - Use this to limit the total cost to a maximum, regardless of what options/attendees are selected</li>
+					<li><strong>member_max_price</strong> (type: Hidden) - Maximum price for members</li>
+					<li><strong>min_price</strong> (type: Hidden) - Use this to make sure the price does not drop below a certain threshold, regardless of what options are selected</li>
+					<li><strong>member_min_price</strong> (type: Hidden) - Minimum price for members</li>
+					<li><strong>amount_paid</strong> (type: Hidden) - The amount paid online, confirmed by the payment processor</li>
+					<li><strong>item_name</strong> (type: Hidden) - The item name to pass to the payment provider, to describe the product/service being sold</li>
+					<li><strong>transaction_id</strong> (type: Hidden) - An empty field to record the unique transaction id returned from the payment provider</li>
+					<li><strong>payment_status</strong> (type: Hidden) - An empty field to record the status (i.e. \"Completed\") returned from the payment provider</li>
+				</ul>
+			
+				<p><em>Fields that will be passed to pre-populate the off-site payment form: first_name, last_name, mailing_address, city, state, zip, email, phone_number</em></p>
+				";
 	
 	
 		$instructions = new InputfieldMarkup();
