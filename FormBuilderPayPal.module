@@ -7,8 +7,8 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 		return array(
 			'title' => 'Form Builder PayPal Integration',
 			'author' => 'Mike Spooner (thetuningspoon), Solution Innovators',
-			'version' => 002,
-			'summary' => '',
+			'version' => 003,
+			'summary' => 'Adds PayPal Payments Standard checkout to FormBuilder',
 			'singular' => true,
 			'autoload' => true,
 			'installs' => array(),
@@ -154,8 +154,8 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 
 		if($payment_status == 'Completed' && $fieldArray['payment_status'] != 'PAID') { // payment_status is set to complete for the first time
 
-			// Update the paid_online field based on the amount that was passed from PayPal
-			$fieldArray['paid_online'] = $payment_amount;
+			// Update the amount_paid field based on the amount that was passed from PayPal
+			$fieldArray['amount_paid'] = $payment_amount;
 			// Update the transaction_id field based on the transaction ID received from PayPal
 			$fieldArray['transaction_id'] = $transaction_id;
 			// Update payment status
