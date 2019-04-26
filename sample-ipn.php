@@ -69,8 +69,8 @@ while(!safe_feof($fp, $start) && (microtime(true) - $start) < $timeout)  // Whil
 
 		// Authentication protocol is complete - OK to process notification contents
 
-		// Make sure receiver email matches our account and the custom variable is populated
-		if($input->post->receiver_email == $account && $input->post->custom) {
+		// Make sure receiver email matches our account and it is a web_accept transaction
+		if($input->post->receiver_email == $account && $input->post->txn_type == 'web_accept') {
 			$modules->FormBuilderPayPal->processCompletedPayment($input->post); // Update the database and send confirmation emails
 		}
 
