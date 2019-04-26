@@ -7,7 +7,7 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 		return array(
 			'title' => 'Form Builder PayPal Integration',
 			'author' => 'Mike Spooner (thetuningspoon), Solution Innovators',
-			'version' => 004,
+			'version' => 005,
 			'summary' => 'Adds PayPal Payments Standard checkout to FormBuilder',
 			'singular' => true,
 			'autoload' => true,
