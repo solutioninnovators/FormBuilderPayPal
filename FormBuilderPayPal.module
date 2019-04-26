@@ -143,9 +143,9 @@ class FormBuilderPayPal extends WireData implements Module, ConfigurableModule
 		$transaction_id = $this->sanitizer->text($rawResponse->txn_id);
 
 		// Get the form name and entry ID from the custom variable returned from PayPal
-		if(!$rawResponse->custom) $this->log->save('error', 'No custom value was returned from PayPal.');
+		if(!$rawResponse->custom) throw new WireException('No custom value was returned from PayPal to identify the form and entry.');
 		$customArray = explode(',', $rawResponse->custom);
-		if(count($customArray) != 2) $this->log->save('error', 'Custom value from PayPal must contain 2 values.');
+		if(count($customArray) != 2) throw new WireException('Custom value from PayPal must contain 2 values (form name and entry ID).');
 		$formName = $customArray[0];
 		$entryId = (int) $customArray[1];
 
